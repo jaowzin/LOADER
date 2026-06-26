@@ -1,0 +1,436 @@
+#include <jni.h>
+#include <android/log.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define TAG "DPFF_SHARED_BOOT_V2"
+#define TARGET_PACKAGE "com.dts.freefiremax"
+#define TARGET_ACTIVITY "com.dts.freefireth.FFMainActivity"
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+static JavaVM *g_vm = 0;
+
+static int clear_exc(JNIEnv *env, const char *where) {
+    if ((*env)->ExceptionCheck(env)) {
+        LOGE("EXCEPTION at %s", where);
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        return 1;
+    }
+    return 0;
+}
+
+static char *jstrdup(JNIEnv *env, jstring s) {
+    if (!s) return NULL;
+    const char *u = (*env)->GetStringUTFChars(env, s, 0);
+    if (!u) return NULL;
+    char *out = strdup(u);
+    (*env)->ReleaseStringUTFChars(env, s, u);
+    return out;
+}
+
+static jstring new_string(JNIEnv *env, const char *s) {
+    if (!s) return NULL;
+    return (*env)->NewStringUTF(env, s);
+}
+
+static jobject call_obj0(JNIEnv *env, jobject obj, const char *name, const char *sig) {
+    if (!obj) return NULL;
+    jclass cls = (*env)->GetObjectClass(env, obj);
+    if (!cls) return NULL;
+    jmethodID mid = (*env)->GetMethodID(env, cls, name, sig);
+    if (!mid) { clear_exc(env, name); return NULL; }
+    jobject r = (*env)->CallObjectMethod(env, obj, mid);
+    clear_exc(env, name);
+    return r;
+}
+
+static jobject call_obj1_obj(JNIEnv *env, jobject obj, const char *name, const char *sig, jobject a) {
+    if (!obj) return NULL;
+    jclass cls = (*env)->GetObjectClass(env, obj);
+    if (!cls) return NULL;
+    jmethodID mid = (*env)->GetMethodID(env, cls, name, sig);
+    if (!mid) { clear_exc(env, name); return NULL; }
+    jobject r = (*env)->CallObjectMethod(env, obj, mid, a);
+    clear_exc(env, name);
+    return r;
+}
+
+static jobject call_obj2_obj_int(JNIEnv *env, jobject obj, const char *name, const char *sig, jobject a, jint b) {
+    if (!obj) return NULL;
+    jclass cls = (*env)->GetObjectClass(env, obj);
+    if (!cls) return NULL;
+    jmethodID mid = (*env)->GetMethodID(env, cls, name, sig);
+    if (!mid) { clear_exc(env, name); return NULL; }
+    jobject r = (*env)->CallObjectMethod(env, obj, mid, a, b);
+    clear_exc(env, name);
+    return r;
+}
+
+static jobject get_public_field_obj(JNIEnv *env, jobject obj, const char *name, const char *sig) {
+    if (!obj) return NULL;
+    jclass cls = (*env)->GetObjectClass(env, obj);
+    if (!cls) return NULL;
+    jfieldID fid = (*env)->GetFieldID(env, cls, name, sig);
+    if (!fid) { clear_exc(env, name); return NULL; }
+    jobject r = (*env)->GetObjectField(env, obj, fid);
+    clear_exc(env, name);
+    return r;
+}
+
+static int set_public_field_obj(JNIEnv *env, jobject obj, const char *name, const char *sig, jobject val) {
+    if (!obj) return 0;
+    jclass cls = (*env)->GetObjectClass(env, obj);
+    if (!cls) return 0;
+    jfieldID fid = (*env)->GetFieldID(env, cls, name, sig);
+    if (!fid) { clear_exc(env, name); return 0; }
+    (*env)->SetObjectField(env, obj, fid, val);
+    return clear_exc(env, name) ? 0 : 1;
+}
+
+static jobject reflect_get_field(JNIEnv *env, jobject obj, const char *field_name) {
+    if (!obj) return NULL;
+
+    jclass objCls = (*env)->GetObjectClass(env, obj);
+    if (!objCls) return NULL;
+
+    jclass clsClass = (*env)->FindClass(env, "java/lang/Class");
+    jclass fieldClass = (*env)->FindClass(env, "java/lang/reflect/Field");
+    if (!clsClass || !fieldClass) return NULL;
+
+    jmethodID getDeclaredField = (*env)->GetMethodID(env, clsClass, "getDeclaredField", "(Ljava/lang/String;)Ljava/lang/reflect/Field;");
+    jmethodID setAccessible = (*env)->GetMethodID(env, fieldClass, "setAccessible", "(Z)V");
+    jmethodID get = (*env)->GetMethodID(env, fieldClass, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    if (!getDeclaredField || !setAccessible || !get) return NULL;
+
+    jstring fname = (*env)->NewStringUTF(env, field_name);
+    jobject field = (*env)->CallObjectMethod(env, objCls, getDeclaredField, fname);
+    if (clear_exc(env, "reflect_get_field:getDeclaredField")) return NULL;
+    (*env)->CallVoidMethod(env, field, setAccessible, JNI_TRUE);
+    if (clear_exc(env, "reflect_get_field:setAccessible")) return NULL;
+    jobject val = (*env)->CallObjectMethod(env, field, get, obj);
+    if (clear_exc(env, "reflect_get_field:get")) return NULL;
+    return val;
+}
+
+static int reflect_set_field(JNIEnv *env, jobject obj, const char *field_name, jobject value) {
+    if (!obj) return 0;
+
+    jclass objCls = (*env)->GetObjectClass(env, obj);
+    if (!objCls) return 0;
+
+    jclass clsClass = (*env)->FindClass(env, "java/lang/Class");
+    jclass fieldClass = (*env)->FindClass(env, "java/lang/reflect/Field");
+    if (!clsClass || !fieldClass) return 0;
+
+    jmethodID getDeclaredField = (*env)->GetMethodID(env, clsClass, "getDeclaredField", "(Ljava/lang/String;)Ljava/lang/reflect/Field;");
+    jmethodID setAccessible = (*env)->GetMethodID(env, fieldClass, "setAccessible", "(Z)V");
+    jmethodID set = (*env)->GetMethodID(env, fieldClass, "set", "(Ljava/lang/Object;Ljava/lang/Object;)V");
+    if (!getDeclaredField || !setAccessible || !set) return 0;
+
+    jstring fname = (*env)->NewStringUTF(env, field_name);
+    jobject field = (*env)->CallObjectMethod(env, objCls, getDeclaredField, fname);
+    if (clear_exc(env, "reflect_set_field:getDeclaredField")) return 0;
+    (*env)->CallVoidMethod(env, field, setAccessible, JNI_TRUE);
+    if (clear_exc(env, "reflect_set_field:setAccessible")) return 0;
+    (*env)->CallVoidMethod(env, field, set, obj, value);
+    if (clear_exc(env, "reflect_set_field:set")) return 0;
+    return 1;
+}
+
+static jobject current_application(JNIEnv *env) {
+    jclass at = (*env)->FindClass(env, "android/app/ActivityThread");
+    if (!at) { clear_exc(env, "FindClass ActivityThread"); return NULL; }
+    jmethodID curApp = (*env)->GetStaticMethodID(env, at, "currentApplication", "()Landroid/app/Application;");
+    if (!curApp) { clear_exc(env, "currentApplication mid"); return NULL; }
+    jobject app = (*env)->CallStaticObjectMethod(env, at, curApp);
+    clear_exc(env, "currentApplication call");
+    return app;
+}
+
+static jobject current_activity_thread(JNIEnv *env) {
+    jclass at = (*env)->FindClass(env, "android/app/ActivityThread");
+    if (!at) { clear_exc(env, "FindClass ActivityThread"); return NULL; }
+    jmethodID cur = (*env)->GetStaticMethodID(env, at, "currentActivityThread", "()Landroid/app/ActivityThread;");
+    if (!cur) { clear_exc(env, "currentActivityThread mid"); return NULL; }
+    jobject r = (*env)->CallStaticObjectMethod(env, at, cur);
+    clear_exc(env, "currentActivityThread call");
+    return r;
+}
+
+static char *build_dex_path(JNIEnv *env, jstring sourceDir, jobjectArray splits) {
+    char *base = jstrdup(env, sourceDir);
+    if (!base) return NULL;
+
+    size_t total = strlen(base) + 1;
+    jsize count = splits ? (*env)->GetArrayLength(env, splits) : 0;
+    for (jsize i = 0; i < count; i++) {
+        jstring s = (jstring)(*env)->GetObjectArrayElement(env, splits, i);
+        char *cs = jstrdup(env, s);
+        if (cs) { total += 1 + strlen(cs); free(cs); }
+    }
+
+    char *out = (char *)calloc(total + 1, 1);
+    strcpy(out, base);
+    free(base);
+
+    for (jsize i = 0; i < count; i++) {
+        jstring s = (jstring)(*env)->GetObjectArrayElement(env, splits, i);
+        char *cs = jstrdup(env, s);
+        if (cs) {
+            strcat(out, ":");
+            strcat(out, cs);
+            free(cs);
+        }
+    }
+    return out;
+}
+
+static jobject get_loaded_apk(JNIEnv *env, jstring loaderPkg) {
+    jobject at = current_activity_thread(env);
+    if (!at) return NULL;
+
+    jobject mPackages = reflect_get_field(env, at, "mPackages");
+    if (!mPackages) { LOGE("mPackages not found"); return NULL; }
+
+    // android.util.ArrayMap has get(Object). java.util.Map also has get(Object).
+    jobject weakRef = call_obj1_obj(env, mPackages, "get", "(Ljava/lang/Object;)Ljava/lang/Object;", loaderPkg);
+    if (!weakRef) { LOGE("LoadedApk WeakReference not found for loader package"); return NULL; }
+
+    jobject loadedApk = call_obj0(env, weakRef, "get", "()Ljava/lang/Object;");
+    if (!loadedApk) { LOGE("LoadedApk weak ref is null"); return NULL; }
+
+    return loadedApk;
+}
+
+static int patch_application_info(JNIEnv *env, jobject appInfo, jstring src, jobjectArray splits, jstring nativeDir) {
+    if (!appInfo) return 0;
+    int ok = 1;
+    ok &= set_public_field_obj(env, appInfo, "sourceDir", "Ljava/lang/String;", src);
+    ok &= set_public_field_obj(env, appInfo, "publicSourceDir", "Ljava/lang/String;", src);
+    ok &= set_public_field_obj(env, appInfo, "splitSourceDirs", "[Ljava/lang/String;", splits);
+    ok &= set_public_field_obj(env, appInfo, "splitPublicSourceDirs", "[Ljava/lang/String;", splits);
+    ok &= set_public_field_obj(env, appInfo, "nativeLibraryDir", "Ljava/lang/String;", nativeDir);
+    return ok;
+}
+
+static jobject create_path_classloader(JNIEnv *env, const char *dexPath, jstring nativeDir, jobject oldLoader) {
+    jobject parent = NULL;
+    if (oldLoader) parent = call_obj0(env, oldLoader, "getParent", "()Ljava/lang/ClassLoader;");
+
+    jclass pcl = (*env)->FindClass(env, "dalvik/system/PathClassLoader");
+    if (!pcl) { clear_exc(env, "FindClass PathClassLoader"); return NULL; }
+
+    jmethodID init = (*env)->GetMethodID(env, pcl, "<init>", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V");
+    if (!init) { clear_exc(env, "PathClassLoader.<init>"); return NULL; }
+
+    jstring jdex = new_string(env, dexPath);
+    jobject cl = (*env)->NewObject(env, pcl, init, jdex, nativeDir, parent);
+    if (clear_exc(env, "New PathClassLoader")) return NULL;
+    return cl;
+}
+
+static int verify_activity(JNIEnv *env, jobject cl) {
+    if (!cl) return 0;
+    jstring name = new_string(env, TARGET_ACTIVITY);
+    jobject klass = call_obj1_obj(env, cl, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", name);
+    if (klass) {
+        LOGI("VERIFY OK loadClass(%s)", TARGET_ACTIVITY);
+        return 1;
+    }
+    LOGE("VERIFY FAIL loadClass(%s)", TARGET_ACTIVITY);
+    return 0;
+}
+
+static int bootstrap(JNIEnv *env, jobject ctx) {
+    LOGI("bootstrap ENTER");
+
+    if (!ctx) {
+        LOGI("context arg null, trying ActivityThread.currentApplication()");
+        ctx = current_application(env);
+    }
+    if (!ctx) {
+        LOGE("no Context available yet; nativeInit must be called with Context before Activity launch");
+        return 0;
+    }
+
+    jstring loaderPkg = (jstring)call_obj0(env, ctx, "getPackageName", "()Ljava/lang/String;");
+    char *loaderPkgC = jstrdup(env, loaderPkg);
+    LOGI("loader package=%s target=%s", loaderPkgC ? loaderPkgC : "<null>", TARGET_PACKAGE);
+
+    jobject pm = call_obj0(env, ctx, "getPackageManager", "()Landroid/content/pm/PackageManager;");
+    if (!pm) { LOGE("getPackageManager failed"); if(loaderPkgC) free(loaderPkgC); return 0; }
+
+    jstring targetPkg = new_string(env, TARGET_PACKAGE);
+    jobject targetInfo = call_obj2_obj_int(env, pm, "getApplicationInfo", "(Ljava/lang/String;I)Landroid/content/pm/ApplicationInfo;", targetPkg, 0);
+    if (!targetInfo) { LOGE("getApplicationInfo(%s) failed", TARGET_PACKAGE); if(loaderPkgC) free(loaderPkgC); return 0; }
+
+    jstring src = (jstring)get_public_field_obj(env, targetInfo, "sourceDir", "Ljava/lang/String;");
+    jobjectArray splits = (jobjectArray)get_public_field_obj(env, targetInfo, "splitSourceDirs", "[Ljava/lang/String;");
+    jstring nativeDir = (jstring)get_public_field_obj(env, targetInfo, "nativeLibraryDir", "Ljava/lang/String;");
+
+    char *srcC = jstrdup(env, src);
+    char *nativeC = jstrdup(env, nativeDir);
+    char *dexPath = build_dex_path(env, src, splits);
+
+    LOGI("target sourceDir=%s", srcC ? srcC : "<null>");
+    LOGI("target nativeLibraryDir=%s", nativeC ? nativeC : "<null>");
+    LOGI("target dexPath=%s", dexPath ? dexPath : "<null>");
+
+    if (!dexPath || !nativeDir) {
+        LOGE("missing target paths");
+        if(loaderPkgC) free(loaderPkgC); if(srcC) free(srcC); if(nativeC) free(nativeC); if(dexPath) free(dexPath);
+        return 0;
+    }
+
+    jobject oldLoader = call_obj0(env, ctx, "getClassLoader", "()Ljava/lang/ClassLoader;");
+    jobject newLoader = create_path_classloader(env, dexPath, nativeDir, oldLoader);
+    if (!newLoader) {
+        LOGE("create PathClassLoader failed");
+        if(loaderPkgC) free(loaderPkgC); if(srcC) free(srcC); if(nativeC) free(nativeC); free(dexPath);
+        return 0;
+    }
+
+    jobject loadedApk = get_loaded_apk(env, loaderPkg);
+    if (!loadedApk) {
+        LOGE("LoadedApk not found");
+        if(loaderPkgC) free(loaderPkgC); if(srcC) free(srcC); if(nativeC) free(nativeC); free(dexPath);
+        return 0;
+    }
+
+    jobject loaderAppInfo = reflect_get_field(env, loadedApk, "mApplicationInfo");
+    if (loaderAppInfo) {
+        patch_application_info(env, loaderAppInfo, src, splits, nativeDir);
+        LOGI("patched LoadedApk.mApplicationInfo paths");
+    } else {
+        LOGE("LoadedApk.mApplicationInfo not available");
+    }
+
+    if (reflect_set_field(env, loadedApk, "mClassLoader", newLoader)) {
+        LOGI("patched LoadedApk.mClassLoader -> target PathClassLoader");
+    } else {
+        LOGE("failed to patch LoadedApk.mClassLoader");
+    }
+
+    // Also patch ContextImpl.mPackageInfo's app info if this context exposes it.
+    jobject pkgInfo = reflect_get_field(env, ctx, "mPackageInfo");
+    if (pkgInfo) {
+        jobject ctxAppInfo = reflect_get_field(env, pkgInfo, "mApplicationInfo");
+        if (ctxAppInfo) patch_application_info(env, ctxAppInfo, src, splits, nativeDir);
+        reflect_set_field(env, pkgInfo, "mClassLoader", newLoader);
+        LOGI("patched ContextImpl.mPackageInfo best-effort");
+    }
+
+    verify_activity(env, newLoader);
+
+    if(loaderPkgC) free(loaderPkgC);
+    if(srcC) free(srcC);
+    if(nativeC) free(nativeC);
+    if(dexPath) free(dexPath);
+
+    LOGI("bootstrap LEAVE");
+    return 1;
+}
+
+static void nativeInit_ctx_int_obj(JNIEnv *env, jobject thiz, jobject ctx, jint mode, jobject obj) {
+    (void)thiz; (void)mode; (void)obj;
+    LOGI("nativeInit(Context,int,Object) ENTER");
+    bootstrap(env, ctx);
+    LOGI("nativeInit(Context,int,Object) LEAVE");
+}
+
+static void nativeInit_ctx_int(JNIEnv *env, jobject thiz, jobject ctx, jint mode) {
+    (void)thiz; (void)mode;
+    LOGI("nativeInit(Context,int) ENTER");
+    bootstrap(env, ctx);
+    LOGI("nativeInit(Context,int) LEAVE");
+}
+
+static void nativeInit_ctx(JNIEnv *env, jobject thiz, jobject ctx) {
+    (void)thiz;
+    LOGI("nativeInit(Context) ENTER");
+    bootstrap(env, ctx);
+    LOGI("nativeInit(Context) LEAVE");
+}
+
+static void nativeInit_void(JNIEnv *env, jobject thiz) {
+    (void)thiz;
+    LOGI("nativeInit() ENTER");
+    bootstrap(env, NULL);
+    LOGI("nativeInit() LEAVE");
+}
+
+static int register_methods(JNIEnv *env) {
+    jclass cls = (*env)->FindClass(env, "com/dts/freefireth/FFApplication");
+    if (!cls) {
+        clear_exc(env, "FindClass FFApplication");
+        LOGE("FFApplication not found in JNI_OnLoad");
+        return 0;
+    }
+
+    /*
+     * V2: do NOT register all signatures in one RegisterNatives call.
+     * Some DPFF builds declare only one nativeInit overload. RegisterNatives
+     * throws NoSuchMethodError for non-existing overloads, and a grouped call
+     * makes System.loadLibrary fail. Here each candidate is tried separately;
+     * missing overloads are cleared and ignored.
+     */
+    JNINativeMethod candidates[] = {
+        {"nativeInit", "(Landroid/content/Context;ILjava/lang/Object;)V", (void*)nativeInit_ctx_int_obj},
+        {"nativeInit", "(Landroid/content/Context;I)V", (void*)nativeInit_ctx_int},
+        {"nativeInit", "(Landroid/content/Context;)V", (void*)nativeInit_ctx},
+        {"nativeInit", "()V", (void*)nativeInit_void},
+    };
+
+    int ok = 0;
+    int total = (int)(sizeof(candidates) / sizeof(candidates[0]));
+    for (int i = 0; i < total; i++) {
+        JNINativeMethod one = candidates[i];
+        jint rc = (*env)->RegisterNatives(env, cls, &one, 1);
+        if (rc == 0 && !(*env)->ExceptionCheck(env)) {
+            LOGI("RegisterNatives OK nativeInit%s", one.signature);
+            ok++;
+        } else {
+            LOGE("RegisterNatives skip missing nativeInit%s rc=%d", one.signature, rc);
+            clear_exc(env, "RegisterNatives single candidate");
+        }
+    }
+
+    if (ok == 0) {
+        LOGE("RegisterNatives no nativeInit overload matched; leaving exported JNI fallbacks only");
+    } else {
+        LOGI("RegisterNatives matched count=%d", ok);
+    }
+    return ok;
+}
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+    (void)reserved;
+    g_vm = vm;
+    JNIEnv *env = NULL;
+    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK || !env) {
+        return JNI_ERR;
+    }
+    LOGI("JNI_OnLoad ENTER");
+    register_methods(env);
+    LOGI("JNI_OnLoad LEAVE");
+    return JNI_VERSION_1_6;
+}
+
+JNIEXPORT void JNICALL Java_com_dts_freefireth_FFApplication_nativeInit(JNIEnv *env, jobject thiz) {
+    nativeInit_void(env, thiz);
+}
+
+JNIEXPORT void JNICALL Java_com_dts_freefireth_FFApplication_nativeInit__Landroid_content_Context_2(JNIEnv *env, jobject thiz, jobject ctx) {
+    nativeInit_ctx(env, thiz, ctx);
+}
+
+JNIEXPORT void JNICALL Java_com_dts_freefireth_FFApplication_nativeInit__Landroid_content_Context_2I(JNIEnv *env, jobject thiz, jobject ctx, jint mode) {
+    nativeInit_ctx_int(env, thiz, ctx, mode);
+}
+
+JNIEXPORT void JNICALL Java_com_dts_freefireth_FFApplication_nativeInit__Landroid_content_Context_2ILjava_lang_Object_2(JNIEnv *env, jobject thiz, jobject ctx, jint mode, jobject obj) {
+    nativeInit_ctx_int_obj(env, thiz, ctx, mode, obj);
+}
