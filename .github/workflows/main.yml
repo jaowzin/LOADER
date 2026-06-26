@@ -3,16 +3,12 @@ name: Build libshared KUBOOM bootstrap
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
     paths:
-      - 'src/**'
-      - 'tools/**'
-      - '.github/workflows/build-libshared.yml'
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'tools/**'
-      - '.github/workflows/build-libshared.yml'
+      - "src/**"
+      - ".github/workflows/build-libshared.yml"
+
+permissions:
+  contents: read
 
 jobs:
   build-arm64:
@@ -20,39 +16,118 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      API: '23'
-      NDK_VERSION: '26.3.11579264'
+      API_LEVEL: "23"
+      ABI: "arm64-v8a"
+      SRC_FILE: "src/libshared_kuboom_bootstrap_v1.c"
+      OUT_DIR: "out/arm64-v8a"
+      OUT_FILE: "out/arm64-v8a/libshared.so"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK
+      - name: Locate or download Android NDK r26d
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "ndk;${NDK_VERSION}"
-          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          set -euo pipefail
+
+          echo "[*] Checking existing NDK paths..."
+
+          if [ -n "${ANDROID_NDK_HOME:-}" ] && [ -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API_LEVEL}-clang" ]; then
+            echo "NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+            echo "[OK] Using ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+            exit 0
+          fi
+
+          if [ -n "${ANDROID_NDK_ROOT:-}" ] && [ -x "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API_LEVEL}-clang" ]; then
+            echo "NDK_HOME=$ANDROID_NDK_ROOT" >> "$GITHUB_ENV"
+            echo "[OK] Using ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
+            exit 0
+          fi
+
+          if [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME/ndk" ]; then
+            FOUND_NDK="$(find "$ANDROID_HOME/ndk" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1 || true)"
+            if [ -n "$FOUND_NDK" ] && [ -x "$FOUND_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API_LEVEL}-clang" ]; then
+              echo "NDK_HOME=$FOUND_NDK" >> "$GITHUB_ENV"
+              echo "[OK] Using installed NDK=$FOUND_NDK"
+              exit 0
+            fi
+          fi
+
+          echo "[*] No usable installed NDK found. Downloading android-ndk-r26d..."
+
+          cd "$RUNNER_TEMP"
+          curl -L --retry 3 --retry-delay 5 \
+            -o android-ndk-r26d-linux.zip \
+            https://dl.google.com/android/repository/android-ndk-r26d-linux.zip
+
+          unzip -q android-ndk-r26d-linux.zip
+
+          NDK_PATH="$RUNNER_TEMP/android-ndk-r26d"
+
+          if [ ! -x "$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API_LEVEL}-clang" ]; then
+            echo "[ERROR] NDK clang not found after download."
+            exit 1
+          fi
+
+          echo "NDK_HOME=$NDK_PATH" >> "$GITHUB_ENV"
+          echo "[OK] Downloaded NDK=$NDK_PATH"
+
+      - name: Verify source layout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "[*] Repository files:"
+          find . -maxdepth 3 -type f | sort
+
+          if [ ! -f "$SRC_FILE" ]; then
+            echo "[ERROR] Source file not found: $SRC_FILE"
+            exit 1
+          fi
+
+          echo "[OK] Source found: $SRC_FILE"
 
       - name: Build libshared.so
         shell: bash
         run: |
-          chmod +x tools/build_local.sh
-          ./tools/build_local.sh
+          set -euo pipefail
+
+          CLANG="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android${API_LEVEL}-clang"
+
+          mkdir -p "$OUT_DIR"
+
+          echo "[*] Using compiler:"
+          "$CLANG" --version
+
+          echo "[*] Building $OUT_FILE"
+
+          "$CLANG" \
+            -shared \
+            -fPIC \
+            -O2 \
+            -Wall \
+            -Wextra \
+            -Wno-unused-parameter \
+            -Wl,--build-id=none \
+            -Wl,--hash-style=both \
+            -o "$OUT_FILE" \
+            "$SRC_FILE" \
+            -llog \
+            -landroid
+
+          echo "[OK] Build finished."
 
       - name: Inspect output
         shell: bash
         run: |
-          ls -lah out/arm64-v8a/
-          file out/arm64-v8a/libshared.so
-          readelf -h out/arm64-v8a/libshared.so | sed -n '1,24p'
-          readelf -Ws out/arm64-v8a/libshared.so | grep -E 'JNI_OnLoad|SafeDKApplication|KuboomShellApplication' || true
+          set -euo pipefail
 
-      - name: Upload libshared artifact
+          ls -lah "$OUT_FILE"
+          file "$OUT_FILE"
+          readelf -h "$OUT_FILE"
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: libshared-kuboom-bootstrap-arm64-v8a
