@@ -35,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TAG "KUBOOM_BOOT_V1"
+#define TAG "KUBOOM_BOOT_V1_3"
 #define TARGET_PACKAGE "com.Nobodyshot.kuboom"
 #define TARGET_ACTIVITY "com.unity3d.player.UnityPlayerActivity"
 
@@ -299,6 +299,40 @@ static int patch_application_info(JNIEnv *env, jobject appInfo, jstring src, job
     return ok;
 }
 
+
+/*
+ * patch_loaded_apk_raw_paths()
+ * ----------------------------
+ * Unity não usa somente ApplicationInfo. Em várias versões, UnityPlayer consulta
+ * Context.getPackageCodePath(), AssetManager/Resources ou caminhos internos do
+ * LoadedApk. Se mAppDir/mResDir continuam apontando para o APK shell, a Activity
+ * Unity sobe mas acusa falta de resources, por exemplo:
+ *   "Not enough storage space to install required resources."
+ *
+ * Esta rotina replica os caminhos do target também nos campos privados do
+ * LoadedApk do loader. É best-effort: campos ausentes em determinada versão do
+ * Android são ignorados com exception limpa.
+ */
+static void patch_loaded_apk_raw_paths(JNIEnv *env, jobject loadedApk, jstring src, jobjectArray splits, jstring nativeDir) {
+    if (!loadedApk) return;
+
+    if (reflect_set_field(env, loadedApk, "mAppDir", src)) {
+        LOGI("patched LoadedApk.mAppDir");
+    }
+    if (reflect_set_field(env, loadedApk, "mResDir", src)) {
+        LOGI("patched LoadedApk.mResDir");
+    }
+    if (reflect_set_field(env, loadedApk, "mSplitAppDirs", splits)) {
+        LOGI("patched LoadedApk.mSplitAppDirs");
+    }
+    if (reflect_set_field(env, loadedApk, "mSplitResDirs", splits)) {
+        LOGI("patched LoadedApk.mSplitResDirs");
+    }
+    if (reflect_set_field(env, loadedApk, "mLibDir", nativeDir)) {
+        LOGI("patched LoadedApk.mLibDir");
+    }
+}
+
 /*
  * create_path_classloader()
  * -------------------------
@@ -411,6 +445,8 @@ static int bootstrap(JNIEnv *env, jobject ctx) {
         LOGE("LoadedApk.mApplicationInfo not available");
     }
 
+    patch_loaded_apk_raw_paths(env, loadedApk, src, splits, nativeDir);
+
     if (reflect_set_field(env, loadedApk, "mClassLoader", newLoader)) {
         LOGI("patched LoadedApk.mClassLoader -> target PathClassLoader");
     } else {
@@ -422,6 +458,7 @@ static int bootstrap(JNIEnv *env, jobject ctx) {
     if (pkgInfo) {
         jobject ctxAppInfo = reflect_get_field(env, pkgInfo, "mApplicationInfo");
         if (ctxAppInfo) patch_application_info(env, ctxAppInfo, src, splits, nativeDir);
+        patch_loaded_apk_raw_paths(env, pkgInfo, src, splits, nativeDir);
         reflect_set_field(env, pkgInfo, "mClassLoader", newLoader);
         LOGI("patched ContextImpl.mPackageInfo best-effort");
     }

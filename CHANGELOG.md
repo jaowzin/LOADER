@@ -1,17 +1,21 @@
-# Changelog
+# CHANGELOG
+
+## v1.3
+- Corrige caso em que UnityPlayerActivity sobe, mas Unity mostra:
+  `Not enough storage space to install required resources.`
+- Além de ApplicationInfo, agora a shared também tenta patchar campos privados do LoadedApk:
+  - `mAppDir`
+  - `mResDir`
+  - `mSplitAppDirs`
+  - `mSplitResDirs`
+  - `mLibDir`
+- Tag de log alterada para `KUBOOM_BOOT_V1_3`.
+
+## v1.2
+- Workflow sem android-actions/setup-android.
 
 ## v1.1
-
-- Adicionado workflow GitHub Actions:
-  - `.github/workflows/build-libshared.yml`
-- Adicionados blocos smali separados em:
-  - `smali/patch_blocks/`
-- Atualizado `SafeDKApplication_BOOTSTRAP_PATCH_EXAMPLE.smali` com instruções de merge para `<clinit>` e `attachBaseContext`.
-- Adicionado `docs/GITHUB_WORKFLOW.md`.
+- Adicionado workflow e blocos smali.
 
 ## v1.0
-
-- Adaptação inicial bootstrap/no-op para KUBOOM CTF.
-- Alvo: `com.Nobodyshot.kuboom`.
-- Activity de verificação: `com.unity3d.player.UnityPlayerActivity`.
-- Classe primária JNI: `com/safedk/android/SafeDKApplication`.
+- Bootstrap/no-op para com.Nobodyshot.kuboom.

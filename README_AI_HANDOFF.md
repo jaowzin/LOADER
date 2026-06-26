@@ -123,3 +123,15 @@ smali/SafeDKApplication_BOOTSTRAP_PATCH_EXAMPLE.smali
 ## Logs esperados
 
 Veja `EXPECTED_LOGS.txt`.
+
+---
+
+## Nota v1.2 — workflow corrigido
+
+Se a build do GitHub Actions falhar durante `setup-android` ou `sdkmanager` antes de compilar a lib, use o workflow v1.2 incluído neste pacote. Ele não usa `android-actions/setup-android@v3`; resolve o NDK localmente ou baixa diretamente o Android NDK r26d.
+
+Smali direto para a SafeDKApplication:
+
+```text
+smali/SafeDKApplication_INSERT_THIS_PATCH.smali
+```
