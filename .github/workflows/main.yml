@@ -1,0 +1,60 @@
+name: Build libshared KUBOOM bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'src/**'
+      - 'tools/**'
+      - '.github/workflows/build-libshared.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tools/**'
+      - '.github/workflows/build-libshared.yml'
+
+jobs:
+  build-arm64:
+    name: Build arm64-v8a libshared.so
+    runs-on: ubuntu-latest
+
+    env:
+      API: '23'
+      NDK_VERSION: '26.3.11579264'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Build libshared.so
+        shell: bash
+        run: |
+          chmod +x tools/build_local.sh
+          ./tools/build_local.sh
+
+      - name: Inspect output
+        shell: bash
+        run: |
+          ls -lah out/arm64-v8a/
+          file out/arm64-v8a/libshared.so
+          readelf -h out/arm64-v8a/libshared.so | sed -n '1,24p'
+          readelf -Ws out/arm64-v8a/libshared.so | grep -E 'JNI_OnLoad|SafeDKApplication|KuboomShellApplication' || true
+
+      - name: Upload libshared artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libshared-kuboom-bootstrap-arm64-v8a
+          path: out/arm64-v8a/libshared.so
+          if-no-files-found: error
