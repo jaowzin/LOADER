@@ -16,7 +16,7 @@ A v1.4 mantém os patches de paths/classloader da v1.3 e também ajusta a identi
 2. Substitua no loader: `lib/arm64-v8a/libshared.so`.
 3. Mantenha a `SafeDKApplication.smali` mínima já enviada.
 4. Instale o alvo original `com.Nobodyshot.kuboom` junto ao loader.
-5. Filtre logs com `adb logcat -s KUBOOM_BOOT_V1_4 AndroidRuntime Unity`.
+5. Filtre logs com `adb logcat -s KUBOOM_BOOT_V1_5 AndroidRuntime Unity`.
 
 ## Escopo
 
@@ -159,3 +159,8 @@ Smali direto para a SafeDKApplication:
 ```text
 smali/SafeDKApplication_INSERT_THIS_PATCH.smali
 ```
+
+
+## v1.5 UID/package note
+
+Use v1.5 after seeing `SecurityException: Package com.Nobodyshot.kuboom does not belong to <uid>`. This version does not spoof Android package identity; it preserves the loader package and only redirects target paths/ClassLoader.

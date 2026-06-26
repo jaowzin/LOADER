@@ -23,7 +23,7 @@
  *   -> System.loadLibrary("shared")
  *   -> JNI_OnLoad registra nativeInit(...) se a classe declarar native
  *   -> attachBaseContext(context) chama nativeInit(context)
- *   -> bootstrap troca LoadedApk.mClassLoader, caminhos e package identity do Context/LoadedApk
+ *   -> bootstrap troca LoadedApk.mClassLoader e caminhos do target, preservando a identidade/UID do loader
  *   -> loadClass(com.unity3d.player.UnityPlayerActivity) deve validar
  *
  * Escopo:
@@ -35,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TAG "KUBOOM_BOOT_V1_4"
+#define TAG "KUBOOM_BOOT_V1_5"
 #define TARGET_PACKAGE "com.Nobodyshot.kuboom"
 #define TARGET_ACTIVITY "com.unity3d.player.UnityPlayerActivity"
 
@@ -292,13 +292,13 @@ static int patch_application_info(JNIEnv *env, jobject appInfo, jstring targetPk
     if (!appInfo) return 0;
     int ok = 1;
     /*
-     * Unity usa Context.getPackageName() + Resources.getIdentifier(...).
-     * Em shell com package próprio, a tabela de resources pode continuar com
-     * o pacote original. Se a identidade ficar como com.Nobodyshot.loader,
-     * getIdentifier("game_view_content_description", "string", package) retorna 0
-     * e o Unity cai com Resources$NotFoundException: String resource ID #0x0.
+     * v1.5: NÃO altera ApplicationInfo.packageName.
+     * Android valida se o nome do pacote pertence ao UID chamador.
+     * Forçar com.Nobodyshot.kuboom dentro do processo/UID do loader causa:
+     *   SecurityException: Package com.Nobodyshot.kuboom does not belong to <uid>
+     * Portanto preservamos a identidade do loader e só redirecionamos caminhos.
      */
-    ok &= set_public_field_obj(env, appInfo, "packageName", "Ljava/lang/String;", targetPkg);
+    (void)targetPkg;
     ok &= set_public_field_obj(env, appInfo, "sourceDir", "Ljava/lang/String;", src);
     ok &= set_public_field_obj(env, appInfo, "publicSourceDir", "Ljava/lang/String;", src);
     ok &= set_public_field_obj(env, appInfo, "splitSourceDirs", "[Ljava/lang/String;", splits);
@@ -344,30 +344,23 @@ static void patch_loaded_apk_raw_paths(JNIEnv *env, jobject loadedApk, jstring s
 /*
  * patch_package_identity()
  * ------------------------
- * Ajusta a identidade Java visível por Context/LoadedApk. Isso é necessário
- * para Unity quando o APK shell tem package diferente do pacote de resources
- * original. O sintoma típico é:
- *   android.content.res.Resources$NotFoundException: String resource ID #0x0
- * ao iniciar com.unity3d.player.UnityPlayerActivity.
+ * v1.5: desativado por segurança/compatibilidade.
  *
- * Campos ausentes são ignorados. O mPackages do ActivityThread continua sendo
- * acessado antes pelo package do loader; esta rotina roda depois disso.
+ * A v1.4 tentou trocar LoadedApk.mPackageName / ContextImpl.mBasePackageName /
+ * ContextImpl.mOpPackageName para o pacote alvo. Em Android moderno isso dispara
+ * validação de UID em chamadas do framework:
+ *   SecurityException: Package com.Nobodyshot.kuboom does not belong to <uid>
+ *
+ * Para loader com package próprio, a identidade deve continuar sendo a do loader.
+ * Resources/libs devem ser resolvidos por caminhos, ou o loader deve usar o APK
+ * original como base real contendo resources.arsc/assets/libs.
  */
 static void patch_package_identity(JNIEnv *env, jobject ctx, jobject loadedApk, jstring targetPkg) {
-    if (loadedApk) {
-        if (reflect_set_field(env, loadedApk, "mPackageName", targetPkg)) {
-            LOGI("patched LoadedApk.mPackageName -> target");
-        }
-    }
-
-    if (ctx) {
-        if (reflect_set_field(env, ctx, "mBasePackageName", targetPkg)) {
-            LOGI("patched ContextImpl.mBasePackageName -> target");
-        }
-        if (reflect_set_field(env, ctx, "mOpPackageName", targetPkg)) {
-            LOGI("patched ContextImpl.mOpPackageName -> target");
-        }
-    }
+    (void)env;
+    (void)ctx;
+    (void)loadedApk;
+    (void)targetPkg;
+    LOGI("package identity patch disabled; preserving loader UID/package");
 }
 
 /*
@@ -497,7 +490,7 @@ static int bootstrap(JNIEnv *env, jobject ctx) {
         jobject ctxAppInfo = reflect_get_field(env, pkgInfo, "mApplicationInfo");
         if (ctxAppInfo) patch_application_info(env, ctxAppInfo, targetPkg, src, splits, nativeDir);
         patch_loaded_apk_raw_paths(env, pkgInfo, src, splits, nativeDir);
-        reflect_set_field(env, pkgInfo, "mPackageName", targetPkg);
+        /* v1.5: do not alter pkgInfo.mPackageName; keep loader package bound to its UID. */
         reflect_set_field(env, pkgInfo, "mClassLoader", newLoader);
         LOGI("patched ContextImpl.mPackageInfo best-effort");
     }
