@@ -1,27 +1,15 @@
-Expected logcat filter:
-
-adb logcat -s KUBOOM_BOOT_V1_5 AndroidRuntime Unity
-
-Expected boot sequence:
-
-KUBOOM_BOOT_V1_5 JNI_OnLoad ENTER
-KUBOOM_BOOT_V1_5 RegisterNatives OK class=com/safedk/android/SafeDKApplication nativeInit(Landroid/content/Context;)V
-KUBOOM_BOOT_V1_5 nativeInit(Context) ENTER
-KUBOOM_BOOT_V1_5 bootstrap ENTER
-KUBOOM_BOOT_V1_5 loader package=com.Nobodyshot.loader target=com.Nobodyshot.kuboom
-KUBOOM_BOOT_V1_5 target sourceDir=/data/app/.../com.Nobodyshot.kuboom.../base.apk
-KUBOOM_BOOT_V1_5 target nativeLibraryDir=/data/app/.../lib/arm64
-KUBOOM_BOOT_V1_5 patched LoadedApk.mApplicationInfo paths
-KUBOOM_BOOT_V1_5 patched LoadedApk.mAppDir
-KUBOOM_BOOT_V1_5 patched LoadedApk.mResDir
-KUBOOM_BOOT_V1_5 patched LoadedApk.mSplitAppDirs
-KUBOOM_BOOT_V1_5 patched LoadedApk.mSplitResDirs
-KUBOOM_BOOT_V1_5 patched LoadedApk.mLibDir
-KUBOOM_BOOT_V1_5 patched LoadedApk.mPackageName -> target
-KUBOOM_BOOT_V1_5 patched ContextImpl.mBasePackageName -> target
-KUBOOM_BOOT_V1_5 patched ContextImpl.mOpPackageName -> target
-KUBOOM_BOOT_V1_5 patched LoadedApk.mClassLoader -> target PathClassLoader
-KUBOOM_BOOT_V1_5 VERIFY OK loadClass(com.unity3d.player.UnityPlayerActivity)
-KUBOOM_BOOT_V1_5 bootstrap LEAVE
-
-KUBOOM_BOOT_V1_5 package identity patch disabled; preserving loader UID/package
+KUBOOM_BOOT_V1_6 JNI_OnLoad ENTER
+KUBOOM_BOOT_V1_6 RegisterNatives OK
+KUBOOM_BOOT_V1_6 nativeInit(Context) ENTER
+KUBOOM_BOOT_V1_6 bootstrap ENTER
+KUBOOM_BOOT_V1_6 loader package=com.Nobodyshot.loader target=com.Nobodyshot.kuboom
+KUBOOM_BOOT_V1_6 target sourceDir=/data/app/.../com.Nobodyshot.kuboom.../base.apk
+KUBOOM_BOOT_V1_6 target nativeLibraryDir=/data/app/.../lib/arm64
+KUBOOM_BOOT_V1_6 shell resources mode: keeping loader publicSourceDir/splitPublicSourceDirs
+KUBOOM_BOOT_V1_6 patched LoadedApk.mAppDir
+KUBOOM_BOOT_V1_6 shell resources mode: keeping LoadedApk.mResDir/mSplitResDirs from loader
+KUBOOM_BOOT_V1_6 patched LoadedApk.mSplitAppDirs
+KUBOOM_BOOT_V1_6 patched LoadedApk.mLibDir
+KUBOOM_BOOT_V1_6 package identity patch disabled; preserving loader UID/package
+KUBOOM_BOOT_V1_6 VERIFY OK loadClass(com.unity3d.player.UnityPlayerActivity)
+KUBOOM_BOOT_V1_6 bootstrap LEAVE

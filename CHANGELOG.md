@@ -1,13 +1,10 @@
 # Changelog
 
-## v1.5
+## v1.6
 
-- Corrige `SecurityException: Package com.Nobodyshot.kuboom does not belong to <uid>`.
-- Desativa patch de identidade do pacote introduzido na v1.4.
-- Preserva package/UID do loader.
-- Mantém patches de caminhos do target e ClassLoader.
-
-## v1.4
-
-- Tentava patchar package identity para corrigir resource lookup do Unity.
-- Em Android moderno pode falhar por validação UID/package.
+- Added Shell Resources Mode.
+- Keeps loader resources active for Java/Unity string lookup under `com.Nobodyshot.loader`.
+- Does not patch `LoadedApk.mResDir` or `LoadedApk.mSplitResDirs`.
+- Does not patch `ApplicationInfo.publicSourceDir` or `splitPublicSourceDirs`.
+- Still redirects code/native paths to target `com.Nobodyshot.kuboom`.
+- Avoids v1.4 UID/package spoofing issue.

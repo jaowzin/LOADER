@@ -35,7 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define TAG "KUBOOM_BOOT_V1_5"
+#define TAG "KUBOOM_BOOT_V1_6"
 #define TARGET_PACKAGE "com.Nobodyshot.kuboom"
 #define TARGET_ACTIVITY "com.unity3d.player.UnityPlayerActivity"
 
@@ -292,18 +292,24 @@ static int patch_application_info(JNIEnv *env, jobject appInfo, jstring targetPk
     if (!appInfo) return 0;
     int ok = 1;
     /*
-     * v1.5: NÃO altera ApplicationInfo.packageName.
-     * Android valida se o nome do pacote pertence ao UID chamador.
-     * Forçar com.Nobodyshot.kuboom dentro do processo/UID do loader causa:
-     *   SecurityException: Package com.Nobodyshot.kuboom does not belong to <uid>
-     * Portanto preservamos a identidade do loader e só redirecionamos caminhos.
+     * v1.6 SHELL-RESOURCES MODE:
+     * - NÃO altera ApplicationInfo.packageName. O UID real continua sendo o loader.
+     * - NÃO redireciona publicSourceDir/splitPublicSourceDirs para o alvo.
+     *
+     * Motivo: UnityPlayerActivity faz lookup de string usando o package atual
+     * do Context. Em casca mínima esse package é com.Nobodyshot.loader. Se os
+     * Resources forem redirecionados para o resources.arsc do alvo
+     * com.Nobodyshot.kuboom, getIdentifier(..., com.Nobodyshot.loader) retorna
+     * 0 e gera Resources$NotFoundException: String resource ID #0x0.
+     *
+     * Então nesta versão deixamos os Java resources no loader e redirecionamos
+     * somente code/native paths para o alvo.
      */
     (void)targetPkg;
     ok &= set_public_field_obj(env, appInfo, "sourceDir", "Ljava/lang/String;", src);
-    ok &= set_public_field_obj(env, appInfo, "publicSourceDir", "Ljava/lang/String;", src);
     ok &= set_public_field_obj(env, appInfo, "splitSourceDirs", "[Ljava/lang/String;", splits);
-    ok &= set_public_field_obj(env, appInfo, "splitPublicSourceDirs", "[Ljava/lang/String;", splits);
     ok &= set_public_field_obj(env, appInfo, "nativeLibraryDir", "Ljava/lang/String;", nativeDir);
+    LOGI("shell resources mode: keeping loader publicSourceDir/splitPublicSourceDirs");
     return ok;
 }
 
@@ -327,14 +333,10 @@ static void patch_loaded_apk_raw_paths(JNIEnv *env, jobject loadedApk, jstring s
     if (reflect_set_field(env, loadedApk, "mAppDir", src)) {
         LOGI("patched LoadedApk.mAppDir");
     }
-    if (reflect_set_field(env, loadedApk, "mResDir", src)) {
-        LOGI("patched LoadedApk.mResDir");
-    }
+    /* v1.6: do NOT patch mResDir/mSplitResDirs. Keep Java resources from loader. */
+    LOGI("shell resources mode: keeping LoadedApk.mResDir/mSplitResDirs from loader");
     if (reflect_set_field(env, loadedApk, "mSplitAppDirs", splits)) {
         LOGI("patched LoadedApk.mSplitAppDirs");
-    }
-    if (reflect_set_field(env, loadedApk, "mSplitResDirs", splits)) {
-        LOGI("patched LoadedApk.mSplitResDirs");
     }
     if (reflect_set_field(env, loadedApk, "mLibDir", nativeDir)) {
         LOGI("patched LoadedApk.mLibDir");
@@ -344,7 +346,7 @@ static void patch_loaded_apk_raw_paths(JNIEnv *env, jobject loadedApk, jstring s
 /*
  * patch_package_identity()
  * ------------------------
- * v1.5: desativado por segurança/compatibilidade.
+ * v1.6: desativado por segurança/compatibilidade.
  *
  * A v1.4 tentou trocar LoadedApk.mPackageName / ContextImpl.mBasePackageName /
  * ContextImpl.mOpPackageName para o pacote alvo. Em Android moderno isso dispara
@@ -352,8 +354,8 @@ static void patch_loaded_apk_raw_paths(JNIEnv *env, jobject loadedApk, jstring s
  *   SecurityException: Package com.Nobodyshot.kuboom does not belong to <uid>
  *
  * Para loader com package próprio, a identidade deve continuar sendo a do loader.
- * Resources/libs devem ser resolvidos por caminhos, ou o loader deve usar o APK
- * original como base real contendo resources.arsc/assets/libs.
+ * Em casca mínima, Java resources continuam no loader; code/native paths
+ * apontam para o alvo. Assets Unity dependem de mAppDir/sourceDir.
  */
 static void patch_package_identity(JNIEnv *env, jobject ctx, jobject loadedApk, jstring targetPkg) {
     (void)env;
@@ -490,7 +492,7 @@ static int bootstrap(JNIEnv *env, jobject ctx) {
         jobject ctxAppInfo = reflect_get_field(env, pkgInfo, "mApplicationInfo");
         if (ctxAppInfo) patch_application_info(env, ctxAppInfo, targetPkg, src, splits, nativeDir);
         patch_loaded_apk_raw_paths(env, pkgInfo, src, splits, nativeDir);
-        /* v1.5: do not alter pkgInfo.mPackageName; keep loader package bound to its UID. */
+        /* v1.6: do not alter pkgInfo.mPackageName; keep loader package bound to its UID. */
         reflect_set_field(env, pkgInfo, "mClassLoader", newLoader);
         LOGI("patched ContextImpl.mPackageInfo best-effort");
     }
