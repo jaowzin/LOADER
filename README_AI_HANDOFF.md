@@ -1,3 +1,27 @@
+# shared_kuboom_bootstrap_v1_4
+
+Bootstrap/no-op para o laboratório CTF KUBOOM Unity/IL2CPP.
+
+Esta versão adiciona correção para o erro:
+
+```text
+Resources$NotFoundException: String resource ID #0x0
+```
+
+A v1.4 mantém os patches de paths/classloader da v1.3 e também ajusta a identidade de pacote vista por Context/LoadedApk para `com.Nobodyshot.kuboom`, porque Unity pode resolver strings via `getIdentifier(..., context.getPackageName())`.
+
+## Uso
+
+1. Compile pelo workflow `.github/workflows/build-libshared.yml`.
+2. Substitua no loader: `lib/arm64-v8a/libshared.so`.
+3. Mantenha a `SafeDKApplication.smali` mínima já enviada.
+4. Instale o alvo original `com.Nobodyshot.kuboom` junto ao loader.
+5. Filtre logs com `adb logcat -s KUBOOM_BOOT_V1_4 AndroidRuntime Unity`.
+
+## Escopo
+
+Somente bootstrap/classloader/resources/libs. Não contém menu, hook, patch de memória ou lógica de gameplay.
+
 # Shared bootstrap KUBOOM — handoff
 
 Este pacote contém uma adaptação bootstrap/no-op da `libshared.so` para o alvo CTF KUBOOM analisado.

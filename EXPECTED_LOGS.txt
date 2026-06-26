@@ -1,12 +1,25 @@
-KUBOOM_BOOT_V1 JNI_OnLoad ENTER
-KUBOOM_BOOT_V1 RegisterNatives OK class=com/safedk/android/SafeDKApplication nativeInit(Landroid/content/Context;)V
-KUBOOM_BOOT_V1 nativeInit(Context) ENTER
-KUBOOM_BOOT_V1 bootstrap ENTER
-KUBOOM_BOOT_V1 loader package=com.ctf.kuboom.loader target=com.Nobodyshot.kuboom
-KUBOOM_BOOT_V1 target sourceDir=/data/app/.../com.Nobodyshot.kuboom.../base.apk
-KUBOOM_BOOT_V1 target nativeLibraryDir=/data/app/.../com.Nobodyshot.kuboom.../lib/arm64
-KUBOOM_BOOT_V1 target dexPath=/data/app/.../base.apk[:splits]
-KUBOOM_BOOT_V1 patched LoadedApk.mApplicationInfo paths
-KUBOOM_BOOT_V1 patched LoadedApk.mClassLoader -> target PathClassLoader
-KUBOOM_BOOT_V1 VERIFY OK loadClass(com.unity3d.player.UnityPlayerActivity)
-KUBOOM_BOOT_V1 bootstrap LEAVE
+Expected logcat filter:
+
+adb logcat -s KUBOOM_BOOT_V1_4 AndroidRuntime Unity
+
+Expected boot sequence:
+
+KUBOOM_BOOT_V1_4 JNI_OnLoad ENTER
+KUBOOM_BOOT_V1_4 RegisterNatives OK class=com/safedk/android/SafeDKApplication nativeInit(Landroid/content/Context;)V
+KUBOOM_BOOT_V1_4 nativeInit(Context) ENTER
+KUBOOM_BOOT_V1_4 bootstrap ENTER
+KUBOOM_BOOT_V1_4 loader package=com.Nobodyshot.loader target=com.Nobodyshot.kuboom
+KUBOOM_BOOT_V1_4 target sourceDir=/data/app/.../com.Nobodyshot.kuboom.../base.apk
+KUBOOM_BOOT_V1_4 target nativeLibraryDir=/data/app/.../lib/arm64
+KUBOOM_BOOT_V1_4 patched LoadedApk.mApplicationInfo paths
+KUBOOM_BOOT_V1_4 patched LoadedApk.mAppDir
+KUBOOM_BOOT_V1_4 patched LoadedApk.mResDir
+KUBOOM_BOOT_V1_4 patched LoadedApk.mSplitAppDirs
+KUBOOM_BOOT_V1_4 patched LoadedApk.mSplitResDirs
+KUBOOM_BOOT_V1_4 patched LoadedApk.mLibDir
+KUBOOM_BOOT_V1_4 patched LoadedApk.mPackageName -> target
+KUBOOM_BOOT_V1_4 patched ContextImpl.mBasePackageName -> target
+KUBOOM_BOOT_V1_4 patched ContextImpl.mOpPackageName -> target
+KUBOOM_BOOT_V1_4 patched LoadedApk.mClassLoader -> target PathClassLoader
+KUBOOM_BOOT_V1_4 VERIFY OK loadClass(com.unity3d.player.UnityPlayerActivity)
+KUBOOM_BOOT_V1_4 bootstrap LEAVE
